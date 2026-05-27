@@ -44,8 +44,8 @@ Example config:
     tmpfs:
       - /tmp:size=2g,noexec,nosuid,mode=777
     volumes:
-      - /etc/config/custom/nginx:/tmp/nginx:noexec,nosuid,mode=644
-      - /tmp/nginx/cache:/tmp/nginx-cache:noexec,nosuid,mode=777
+      - /etc/config/nginx:/tmp/nginx:noexec,nosuid,mode=644
+      - /tmp/cache:/tmp/cache:noexec,nosuid,mode=777
     stop_grace_period: 10s
     deploy:
       resources:
