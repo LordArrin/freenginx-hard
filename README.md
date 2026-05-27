@@ -27,3 +27,29 @@ configure arguments: --prefix=/usr/share/nginx --sbin-path=/usr/sbin/nginx --con
 -Wl,-rpath,/usr/local/ssl/lib -fuse-ld=mold -O3 -fPIE -Wl,-pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack
 -Wl,-z,defs -fcf-protection=full -flto=auto' --with-pcre-jit --with-pcre=/tmp/pcre2-10.47
 ```
+
+Example config:
+```
+  nginx:
+    image: lordarrin/freenginx-hard:latest
+    container_name: nginx
+    restart: unless-stopped
+    network_mode: "host"
+    security_opt: 
+      - no-new-privileges:true
+    read_only: true
+    ports:
+      - '8080:8080'
+      - '8443:8443'
+    tmpfs:
+      - /tmp:size=2g,noexec,nosuid,mode=777
+    volumes:
+      - /etc/config/custom/nginx:/tmp/nginx:noexec,nosuid,mode=644
+      - /tmp/nginx/cache:/tmp/nginx-cache:noexec,nosuid,mode=777
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '4'
+```
