@@ -22,9 +22,6 @@ Example config:
     security_opt: 
       - no-new-privileges:true
     read_only: true
-    ports:
-      - '8080:8080'
-      - '8443:8443'
     tmpfs:
       - /tmp:size=2g,noexec,nosuid,mode=777
     volumes:
