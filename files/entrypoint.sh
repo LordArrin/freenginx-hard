@@ -1,6 +1,8 @@
 #!/bin/sh
 set -e
 
+ulimit -c 0 2>/dev/null || true
+
 mkdir -p /tmp/cache/nginx \
          /tmp/cache/nginx-geoip \
          /tmp/logs/nginx \

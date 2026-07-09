@@ -3,13 +3,13 @@
 # ==========================================
 FROM alpine:latest AS builder
 
-ARG BUILD_VERSION=1.31.2
+ARG BUILD_VERSION=1.31.3
 ARG OPENSSL_VERSION=4.0.1
 ARG PCRE_VERSION=10.47
 ARG MIMALLOC_VERSION=2.3.2
 ARG ZLIB_NG_VERSION=2.3.3
 ARG BROTLI_URL=https://github.com/wxx9248/ngx_brotli.git
-ARG GEOIP2_URL=https://github.com/leev/ngx_http_geoip2_module.git
+ARG GEOIP2_URL=https://github.com/kraloveckey/nginx-geoip2.git
 ARG GEOIP2_BASE_URL=https://github.com/mojolabs-id/GeoLite2-Database
 ARG HEADERS_MORE_URL=https://github.com/openresty/headers-more-nginx-module.git
 
@@ -30,10 +30,10 @@ RUN \
     aarch64) MARCH="armv8.2-a+crypto+crc+lse+rdma"; MTUNE="cortex-a55"; CFI_FLAGS="-mbranch-protection=standard" ;; \
   esac; \
   \
-  export HARDENING_CFLAGS="-fstack-protector-strong -fstack-clash-protection --param=ssp-buffer-size=4  \
-    -Wp,-U_FORTIFY_SOURCE,-D_FORTIFY_SOURCE=3 ${CFI_FLAGS}  \
-    -fno-plt -fno-semantic-interposition -ftrivial-auto-var-init=zero -fzero-call-used-regs=used-gpr  \
-    -ftrapv -fno-delete-null-pointer-checks -fipa-pta -fno-math-errno -fmerge-all-constants" && \
+  export HARDENING_CFLAGS="-fstack-protector-strong -fstack-clash-protection --param=ssp-buffer-size=4 \
+    -Wp,-U_FORTIFY_SOURCE,-D_FORTIFY_SOURCE=3 ${CFI_FLAGS} \
+    -fno-plt -fno-semantic-interposition -ftrivial-auto-var-init=zero -fzero-call-used-regs=used-gpr \
+    -ftrapv -fno-delete-null-pointer-checks -fipa-pta -fno-math-errno -fmerge-all-constants -fomit-frame-pointer" && \
   \
   export OPT_CFLAGS="-O3 -march=${MARCH} -mtune=${MTUNE} -pipe -flto=auto ${HARDENING_CFLAGS}" && \
   export OPT_LDFLAGS="-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack -Wl,-z,defs ${CFI_FLAGS} -flto=auto" && \
@@ -86,12 +86,12 @@ RUN \
        ${GEOIP2_BASE_URL}/releases/latest/download/GeoLite2-Country.mmdb && \
   git clone --depth 1 ${HEADERS_MORE_URL} /tmp/ngx_headers_more && \
   \
-  # Building mimalloc (Shared)
+  # Building mimalloc
   git clone --depth 1 -b v${MIMALLOC_VERSION} https://github.com/microsoft/mimalloc.git /tmp/mimalloc && \
   cd /tmp/mimalloc && \
   mkdir -p out/release && cd out/release && \
   cmake -DCMAKE_BUILD_TYPE=Release \
-        -DMI_SECURE=OFF \
+        -DMI_SECURE=ON \
         -DMI_BUILD_SHARED=ON \
         -DMI_BUILD_STATIC=OFF \
         -DMI_BUILD_TESTS=OFF \
@@ -104,19 +104,18 @@ RUN \
   PATH="/usr/lib/ccache:${PATH}" make -j $NB_PROC && \
   make install && \
   \
-  # Building openssl (Shared)
+  # Building openssl
   cd /tmp/openssl-${OPENSSL_VERSION} && \  
   ./config \
     --prefix=/usr/local/ssl \
     --openssldir=/usr/local/ssl \
-    shared \
-    enable-quic enable-tfo enable-pie enable-ktls no-tests \
+    no-shared \
+    enable-quic enable-tfo enable-ktls no-tests \
     -O3 -march=${MARCH} -mtune=${MTUNE} -pipe -fomit-frame-pointer \
-    -fstack-protector-strong -fstack-clash-protection --param=ssp-buffer-size=4 \
-    -grecord-gcc-switches -fno-plt -fno-semantic-interposition \
+    ${HARDENING_CFLAGS} \
     -Wformat-security -Wp,-U_FORTIFY_SOURCE,-D_FORTIFY_SOURCE=3 \
     -DOPENSSL_TLS_SECURITY_LEVEL=3 ${CFI_FLAGS} \
-    -fuse-ld=mold -Wl,-rpath,/usr/local/ssl/lib64 -Wl,-rpath,/usr/local/ssl/lib && \
+    -fuse-ld=mold -flto=auto && \
   PATH="/usr/lib/ccache:${PATH}" make -j $NB_PROC && \
   make install_sw install_ssldirs && \
   \
@@ -181,14 +180,13 @@ RUN \
     --add-module=/tmp/ngx_brotli \
     --add-module=/tmp/ngx_geoip2 \
     --add-module=/tmp/ngx_headers_more \
-    --with-cc-opt="-I/usr/local/ssl/include -I/usr/local/zlib-ng/include -I/usr/local/pcre2/include $OPT_CFLAGS -fPIE -grecord-gcc-switches -Wformat-security -Wno-error=strict-aliasing -Wno-error=vla-parameter -fomit-frame-pointer" \
+    --with-cc-opt="-I/usr/local/ssl/include -I/usr/local/zlib-ng/include -I/usr/local/pcre2/include $OPT_CFLAGS -fPIE -grecord-gcc-switches -Wformat-security -Wno-error=strict-aliasing -Wno-error=vla-parameter" \
     --with-ld-opt="-L/usr/local/ssl/lib64 -L/usr/local/ssl/lib -L/usr/local/zlib-ng/lib -L/usr/local/pcre2/lib -Wl,-rpath,/usr/local/ssl/lib64 -Wl,-rpath,/usr/local/ssl/lib -fuse-ld=mold -Wl,-pie $OPT_LDFLAGS" \
     --with-pcre-jit \
     && \
   PATH="/usr/lib/ccache:${PATH}" make -j $NB_PROC && \
   strip --strip-unneeded objs/nginx && \
   make install
-
 
 # ==========================================
 # Stage 2: Runtime
@@ -197,10 +195,10 @@ FROM alpine:latest AS runtime
 
 LABEL org.opencontainers.image.title="Freenginx Proxy" \
       org.opencontainers.image.description="Freenginx proxy with proper hardening" \
-      org.opencontainers.image.version="1.5.3" \
+      org.opencontainers.image.version="1.5.5" \
       org.opencontainers.image.source="https://github.com/LordArrin/freenginx-hard"
 
-ENV LD_PRELOAD=/usr/lib/libmimalloc.so \
+ENV LD_PRELOAD=/usr/lib/libmimalloc-secure.so \
     MIMALLOC_PURGE_DELAY=120 \
     MIMALLOC_ARENA_EAGER_COMMIT=2
 
@@ -220,6 +218,8 @@ COPY --from=builder /usr/sbin/nginx /usr/sbin/nginx
 COPY --from=builder /usr/share/nginx /usr/share/nginx
 COPY --from=builder /usr/local/ssl /usr/local/ssl
 COPY --from=builder /usr/lib*/libmimalloc* /usr/lib/
+
+RUN echo "/usr/lib/libmimalloc-secure.so" > /etc/ld.so.preload
 
 RUN ln -sf /usr/local/ssl/bin/openssl /usr/sbin/openssl && \
     ln -sf /usr/local/ssl/bin/c_rehash /usr/sbin/c_rehash
