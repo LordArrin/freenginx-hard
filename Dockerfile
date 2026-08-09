@@ -6,7 +6,7 @@ FROM alpine:latest AS builder
 ARG BUILD_VERSION=1.31.3
 ARG OPENSSL_VERSION=4.0.1
 ARG PCRE_VERSION=10.47
-ARG MIMALLOC_VERSION=2.3.2
+ARG MIMALLOC_VERSION=3.4.5
 ARG ZLIB_NG_VERSION=2.3.3
 ARG BROTLI_URL=https://github.com/wxx9248/ngx_brotli.git
 ARG GEOIP2_URL=https://github.com/kraloveckey/nginx-geoip2.git
@@ -195,7 +195,7 @@ FROM alpine:latest AS runtime
 
 LABEL org.opencontainers.image.title="Freenginx Proxy" \
       org.opencontainers.image.description="Freenginx proxy with proper hardening" \
-      org.opencontainers.image.version="1.5.5" \
+      org.opencontainers.image.version="1.6.0" \
       org.opencontainers.image.source="https://github.com/LordArrin/freenginx-hard"
 
 ENV LD_PRELOAD=/usr/lib/libmimalloc-secure.so \
