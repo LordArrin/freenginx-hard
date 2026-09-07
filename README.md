@@ -103,7 +103,7 @@ docker run -d --name nginx -p 80:80 -p 443:443 ghcr.io/lordarrin/freenginx-hard:
 Example config:
 ```
   nginx:
-    image: lordarrin/freenginx-hard:latest
+    image: ghcr.io/lordarrin/freenginx-hard:latest
     container_name: nginx
     restart: unless-stopped
     network_mode: "host"
