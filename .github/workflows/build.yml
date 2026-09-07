@@ -176,3 +176,79 @@ jobs:
           docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.date.outputs.date }}-modern \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.date.outputs.date }}-latest-modern-amd64 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.date.outputs.date }}-latest-modern-arm64
+
+  sync-to-dockerhub:
+    needs: create-manifests
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Set date tag
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Install skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+
+      - name: Log in to GHCR
+        run: |
+          skopeo login ghcr.io \
+            --username ${{ github.repository_owner }} \
+            --password ${{ secrets.GHCR_TOKEN }}
+
+      - name: Log in to Docker Hub
+        run: |
+          skopeo login docker.io \
+            --username ${{ secrets.DOCKERHUB_USERNAME }} \
+            --password ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Sync multi-architecture images
+        run: |
+          IMAGE="${{ env.IMAGE_NAME }}"
+          DATE="${{ steps.date.outputs.date }}"
+          
+          echo "Syncing multi-architecture images..."
+          
+          echo "  $IMAGE:latest"
+          skopeo copy --all "docker://ghcr.io/$IMAGE:latest" "docker://docker.io/$IMAGE:latest"
+          
+          echo "  $IMAGE:latest-modern"
+          skopeo copy --all "docker://ghcr.io/$IMAGE:latest-modern" "docker://docker.io/$IMAGE:latest-modern"
+          
+          echo "  $IMAGE:$DATE"
+          skopeo copy --all "docker://ghcr.io/$IMAGE:$DATE" "docker://docker.io/$IMAGE:$DATE"
+          
+          echo "  $IMAGE:$DATE-modern"
+          skopeo copy --all "docker://ghcr.io/$IMAGE:$DATE-modern" "docker://docker.io/$IMAGE:$DATE-modern"
+
+      - name: Sync architecture-specific images
+        run: |
+          IMAGE="${{ env.IMAGE_NAME }}"
+          DATE="${{ steps.date.outputs.date }}"
+          
+          echo "Syncing architecture-specific images..."
+          
+          TAGS=(
+            "latest-amd64"
+            "latest-arm64"
+            "latest-a53"
+            "latest-a72"
+            "latest-modern-amd64"
+            "latest-modern-arm64"
+            "latest-modern-alderlake"
+            "latest-modern-a55"
+          )
+          
+          for tag in "${TAGS[@]}"; do
+            echo "  $IMAGE:$tag"
+            skopeo copy "docker://ghcr.io/$IMAGE:$tag" "docker://docker.io/$IMAGE:$tag"
+            
+            echo "  $IMAGE:$DATE-$tag"
+            skopeo copy "docker://ghcr.io/$IMAGE:$DATE-$tag" "docker://docker.io/$IMAGE:$DATE-$tag"
+          done
+          
+          echo "All images synced successfully to Docker Hub"
