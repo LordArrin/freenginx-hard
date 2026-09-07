@@ -31,6 +31,75 @@ configure arguments: --prefix=/usr/share/nginx --sbin-path=/usr/sbin/nginx --con
 -flto=auto' --with-pcre-jit
 ```
 
+## Docker Images
+
+Hardened Freenginx images are built weekly with Brotli, GeoIP2, headers-more modules, and full security hardening. Published to GitHub Container Registry.
+
+### Available Tags
+
+#### Multi-Architecture (amd64 + arm64)
+
+| Tag | x86 `-march` | ARM `-march` | Tuning | Use Case |
+|-----|--------------|--------------|--------|----------|
+| `latest` | `x86-64` | `armv8-a` | generic | Maximum compatibility |
+| `latest-modern` | `x86-64-v3` | `armv8.2-a` + crypto/crc/lse/rdma | generic | Modern servers, universal |
+
+#### Architecture-Specific
+
+| Tag | Architecture | `-march` | `-mtune` | Target Hardware |
+|-----|--------------|----------|----------|-----------------|
+| `latest-a53` | arm64 | `armv8-a+crc` | `cortex-a53` | Raspberry Pi 3, low-end SBC |
+| `latest-a72` | arm64 | `armv8-a+crypto+crc` | `cortex-a72` | Raspberry Pi 4, mid-range ARM |
+| `latest-modern-alderlake` | amd64 | `x86-64-v3` | `alderlake` | Intel 12th-14th gen |
+| `latest-modern-a55` | arm64 | `armv8.2-a` + crypto/crc/lse/rdma | `cortex-a55` | Modern ARM SoC (Ampere, Graviton3+) |
+
+### Quick Start
+
+```bash
+# Generic server
+docker run -d --name nginx -p 80:80 -p 443:443 ghcr.io/lordarrin/freenginx-hard:latest
+
+# Raspberry Pi 4
+docker run -d --name nginx -p 80:80 -p 443:443 ghcr.io/lordarrin/freenginx-hard:latest-a72
+
+# Modern Intel/AMD server
+docker run -d --name nginx -p 80:80 -p 443:443 ghcr.io/lordarrin/freenginx-hard:latest-modern
+
+# Intel 12-14 gen server
+docker run -d --name nginx -p 80:80 -p 443:443 ghcr.io/lordarrin/freenginx-hard:latest-modern-alderlake
+```
+
+### How to Choose
+
+**Start with `latest-modern`** unless you have specific hardware:
+- Works on most modern servers (2015 or later)
+- Balanced performance and compatibility
+- Multi-arch: auto-selects correct binary on amd64 and arm64
+
+**Use architecture-specific tags** for maximum performance:
+- `latest-a53` / `latest-a72`: [random fruit] Pi users get 10-20% throughput gain
+- `latest-modern-alderlake`: Intel 12-14th gen get optimal scheduling
+- `latest-modern-a55`: Ampere Altra, AWS Graviton3/4, modern ARM SoCs
+
+**Use `latest`** for:
+- Legacy hardware or unknown VPS CPU
+- Mixed-architecture clusters
+- Maximum portability
+
+### Security & Updates
+
+- **Weekly rebuilds** every Sunday at 03:00 UTC with latest security patches
+- **Hardening applied**: RELRO, PIE, stack protector, CFI, FORTIFY_SOURCE=3, LTO
+- **Mimalloc** allocator preloaded for improved memory efficiency
+- **Date-tagged** variants available for reproducible deployments (e.g., `2026-09-07-a72`)
+
+### Included Modules
+
+- `ngx_brotli` — Brotli compression
+- `ngx_geoip2` — GeoIP2 database support
+- `headers-more-nginx-module` — Custom header manipulation
+- HTTP/2, HTTP/3 (QUIC), TLS 1.3, KTLS, TFO support
+
 Example config:
 ```
   nginx:
