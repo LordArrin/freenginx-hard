@@ -1,7 +1,6 @@
-# ==========================================
-# Stage 1: Builder
-# ==========================================
-FROM alpine:latest AS builder
+ARG ALPINE_VERSION=3.24
+
+FROM alpine:${ALPINE_VERSION} AS builder
 
 ARG BUILD_VERSION=1.31.4
 ARG OPENSSL_VERSION=4.0.2
@@ -13,6 +12,17 @@ ARG GEOIP2_URL=https://github.com/kraloveckey/nginx-geoip2.git
 ARG GEOIP2_BASE_URL=https://github.com/mojolabs-id/GeoLite2-Database
 ARG HEADERS_MORE_URL=https://github.com/openresty/headers-more-nginx-module.git
 
+ARG X86_MARCH=x86-64
+ARG X86_MTUNE=generic
+ARG X86_CFI_FLAGS=""
+
+ARG ARM_MARCH=armv8-a
+ARG ARM_MTUNE=generic
+ARG ARM_CFI_FLAGS="-mbranch-protection=standard"
+
+ARG BUILD_JOBS=0
+ARG ENABLE_LTO=ON
+
 RUN \
   set -euxo pipefail && \
   apk update && \
@@ -22,12 +32,13 @@ RUN \
   \
   cd /tmp && \
   \
-  # Arch selection
-  NB_PROC=$(grep -c ^processor /proc/cpuinfo) && \
+  if [ "$BUILD_JOBS" = "0" ]; then NB_PROC=$(grep -c ^processor /proc/cpuinfo); else NB_PROC="$BUILD_JOBS"; fi && \
+  if [ "$ENABLE_LTO" = "ON" ]; then LTO_FLAG="-flto=auto"; else LTO_FLAG=""; fi && \
+  \
   ARCH=$(uname -m); \
   case "$ARCH" in \
-    x86_64) MARCH="x86-64-v3"; MTUNE="alderlake"; CFI_FLAGS="-fcf-protection=full" ;; \
-    aarch64) MARCH="armv8.2-a+crypto+crc+lse+rdma"; MTUNE="cortex-a55"; CFI_FLAGS="-mbranch-protection=standard" ;; \
+    x86_64) MARCH="${X86_MARCH}"; MTUNE="${X86_MTUNE}"; CFI_FLAGS="${X86_CFI_FLAGS}" ;; \
+    aarch64) MARCH="${ARM_MARCH}"; MTUNE="${ARM_MTUNE}"; CFI_FLAGS="${ARM_CFI_FLAGS}" ;; \
   esac; \
   \
   export HARDENING_CFLAGS="-fstack-protector-strong -fstack-clash-protection --param=ssp-buffer-size=4 \
@@ -35,8 +46,8 @@ RUN \
     -fno-plt -fno-semantic-interposition -ftrivial-auto-var-init=zero -fzero-call-used-regs=used-gpr \
     -ftrapv -fno-delete-null-pointer-checks -fipa-pta -fno-math-errno -fmerge-all-constants -fomit-frame-pointer" && \
   \
-  export OPT_CFLAGS="-O3 -march=${MARCH} -mtune=${MTUNE} -pipe -flto=auto ${HARDENING_CFLAGS}" && \
-  export OPT_LDFLAGS="-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack -Wl,-z,defs ${CFI_FLAGS} -flto=auto" && \
+  export OPT_CFLAGS="-O3 -march=${MARCH} -mtune=${MTUNE} -pipe ${LTO_FLAG} ${HARDENING_CFLAGS}" && \
+  export OPT_LDFLAGS="-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack -Wl,-z,defs ${CFI_FLAGS} ${LTO_FLAG}" && \
   export CC="ccache gcc" CXX="ccache g++"  && \
   \
   echo "Building for $ARCH -> march=$MARCH | mtune=$MTUNE | cfi=$CFI_FLAGS"; \
@@ -49,7 +60,6 @@ RUN \
   cd /tmp/ngx_brotli && \
   git submodule update --init && \
   \
-  # Building brotli library
   cd /tmp/ngx_brotli/deps/brotli && \
   mkdir -p out && cd out && \
   cmake \
@@ -60,10 +70,9 @@ RUN \
     -DCMAKE_EXE_LINKER_FLAGS="$OPT_LDFLAGS" \
     -DCMAKE_INSTALL_PREFIX=./installed \
     .. && \
-  cmake --build . --config Release --target brotlienc brotlidec brotlicommon && \
+  cmake --build . --config Release --target brotlienc brotlidec brotlicommon --parallel $NB_PROC && \
   make install && \
   \
-  # Building pcre2
   cd /tmp/pcre2-${PCRE_VERSION} && \
   mkdir -p build && cd build && \
   cmake \
@@ -86,7 +95,6 @@ RUN \
        ${GEOIP2_BASE_URL}/releases/latest/download/GeoLite2-Country.mmdb && \
   git clone --depth 1 ${HEADERS_MORE_URL} /tmp/ngx_headers_more && \
   \
-  # Building mimalloc
   git clone --depth 1 -b v${MIMALLOC_VERSION} https://github.com/microsoft/mimalloc.git /tmp/mimalloc && \
   cd /tmp/mimalloc && \
   mkdir -p out/release && cd out/release && \
@@ -97,16 +105,15 @@ RUN \
         -DMI_BUILD_TESTS=OFF \
         -DMI_BUILD_OBJECT=OFF \
         -DMI_LIBC_MUSL=ON \
-        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_INSTALL_PREFIX=/tmp/mimalloc-install \
         -DCMAKE_C_FLAGS="$OPT_CFLAGS -fPIC" \
         -DCMAKE_SHARED_LINKER_FLAGS="$OPT_LDFLAGS" \
         ../.. && \
   PATH="/usr/lib/ccache:${PATH}" make -j $NB_PROC && \
   make install && \
   \
-  # Building openssl
-  cd /tmp/openssl-${OPENSSL_VERSION} && \  
-  ./config \
+  cd /tmp/openssl-${OPENSSL_VERSION} && \
+  LDFLAGS="$OPT_LDFLAGS" ./config \
     --prefix=/usr/local/ssl \
     --openssldir=/usr/local/ssl \
     no-shared \
@@ -115,11 +122,10 @@ RUN \
     ${HARDENING_CFLAGS} \
     -Wformat-security -Wp,-U_FORTIFY_SOURCE,-D_FORTIFY_SOURCE=3 \
     -DOPENSSL_TLS_SECURITY_LEVEL=3 ${CFI_FLAGS} \
-    -fuse-ld=mold -flto=auto && \
+    -fuse-ld=mold ${LTO_FLAG} && \
   PATH="/usr/lib/ccache:${PATH}" make -j $NB_PROC && \
   make install_sw install_ssldirs && \
   \
-  # Building zlib-ng
   git clone --depth 1 -b ${ZLIB_NG_VERSION} https://github.com/zlib-ng/zlib-ng.git /tmp/zlib-ng && \
   cd /tmp/zlib-ng && \
   mkdir -p build && cd build && \
@@ -138,7 +144,6 @@ RUN \
   ln -sf /usr/local/zlib-ng/include/zlib.h /usr/include/zlib.h && \
   ln -sf /usr/local/zlib-ng/include/zconf.h /usr/include/zconf.h && \
   \
-  # Building nginx
   cd /tmp/freenginx-${BUILD_VERSION} && \
   ./configure \
     --prefix=/usr/share/nginx \
@@ -188,10 +193,7 @@ RUN \
   strip --strip-unneeded objs/nginx && \
   make install
 
-# ==========================================
-# Stage 2: Runtime
-# ==========================================
-FROM alpine:latest AS runtime
+FROM alpine:${ALPINE_VERSION} AS runtime
 
 LABEL org.opencontainers.image.title="Freenginx Proxy" \
       org.opencontainers.image.description="Freenginx proxy with proper hardening" \
@@ -217,9 +219,11 @@ RUN \
 COPY --from=builder /usr/sbin/nginx /usr/sbin/nginx
 COPY --from=builder /usr/share/nginx /usr/share/nginx
 COPY --from=builder /usr/local/ssl /usr/local/ssl
-COPY --from=builder /usr/lib*/libmimalloc* /usr/lib/
+COPY --from=builder /tmp/mimalloc-install/lib*/libmimalloc* /usr/lib/
 
-RUN echo "/usr/lib/libmimalloc-secure.so" > /etc/ld.so.preload
+RUN MIMALLOC_LIB=$(find /usr/lib -maxdepth 1 \( -name 'libmimalloc*.so*' -type f -o -type l \) | head -n1) && \
+    ln -sf "$MIMALLOC_LIB" /usr/lib/libmimalloc-secure.so && \
+    echo "/usr/lib/libmimalloc-secure.so" > /etc/ld.so.preload
 
 RUN ln -sf /usr/local/ssl/bin/openssl /usr/sbin/openssl && \
     ln -sf /usr/local/ssl/bin/c_rehash /usr/sbin/c_rehash

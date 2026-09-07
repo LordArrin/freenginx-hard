@@ -1,0 +1,178 @@
+name: Build and push Nginx images
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: lordarrin/freenginx-hard
+
+jobs:
+  build-amd64:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: latest-amd64
+            x86_march: x86-64
+            x86_mtune: generic
+            x86_cfi_flags: ""
+            scope: nginx-amd64-base
+          - name: latest-modern-amd64
+            x86_march: x86-64-v3
+            x86_mtune: generic
+            x86_cfi_flags: "-fcf-protection=full"
+            scope: nginx-amd64-modern
+          - name: latest-modern-alderlake
+            x86_march: x86-64-v3
+            x86_mtune: alderlake
+            x86_cfi_flags: "-fcf-protection=full"
+            scope: nginx-amd64-alderlake
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Set date tag
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Build and push ${{ matrix.name }}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.name }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.date.outputs.date }}-${{ matrix.name }}
+          build-args: |
+            X86_MARCH=${{ matrix.x86_march }}
+            X86_MTUNE=${{ matrix.x86_mtune }}
+            X86_CFI_FLAGS=${{ matrix.x86_cfi_flags }}
+            BUILD_JOBS=2
+            ENABLE_LTO=ON
+          cache-from: type=gha,scope=${{ matrix.scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.scope }}
+
+  build-arm64:
+    runs-on: ubuntu-26.04-arm
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: latest-arm64
+            arm_march: armv8-a
+            arm_mtune: generic
+            scope: nginx-arm64-base
+          - name: latest-a53
+            arm_march: armv8-a+crc
+            arm_mtune: cortex-a53
+            scope: nginx-arm64-a53
+          - name: latest-a72
+            arm_march: armv8-a+crypto+crc
+            arm_mtune: cortex-a72
+            scope: nginx-arm64-a72
+          - name: latest-modern-arm64
+            arm_march: armv8.2-a+crypto+crc+lse+rdma
+            arm_mtune: generic
+            scope: nginx-arm64-modern
+          - name: latest-modern-a55
+            arm_march: armv8.2-a+crypto+crc+lse+rdma
+            arm_mtune: cortex-a55
+            scope: nginx-arm64-a55
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Set date tag
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Build and push ${{ matrix.name }}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.name }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.date.outputs.date }}-${{ matrix.name }}
+          build-args: |
+            ARM_MARCH=${{ matrix.arm_march }}
+            ARM_MTUNE=${{ matrix.arm_mtune }}
+            ARM_CFI_FLAGS=-mbranch-protection=standard
+            BUILD_JOBS=2
+            ENABLE_LTO=ON
+          cache-from: type=gha,scope=${{ matrix.scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.scope }}
+
+  create-manifests:
+    needs: [build-amd64, build-arm64]
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Set date tag
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Create and push latest manifest
+        run: |
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-arm64
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.date.outputs.date }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.date.outputs.date }}-latest-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.date.outputs.date }}-latest-arm64
+
+      - name: Create and push latest-modern manifest
+        run: |
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-modern \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-modern-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-modern-arm64
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.date.outputs.date }}-modern \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.date.outputs.date }}-latest-modern-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.date.outputs.date }}-latest-modern-arm64
