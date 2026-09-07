@@ -211,44 +211,41 @@ jobs:
           IMAGE="${{ env.IMAGE_NAME }}"
           DATE="${{ steps.date.outputs.date }}"
           
-          echo "Syncing multi-architecture images..."
+          echo "Syncing multi-architecture images (--all preserves manifest list)..."
           
-          echo "  $IMAGE:latest"
-          skopeo copy --all "docker://ghcr.io/$IMAGE:latest" "docker://docker.io/$IMAGE:latest"
-          
-          echo "  $IMAGE:latest-modern"
-          skopeo copy --all "docker://ghcr.io/$IMAGE:latest-modern" "docker://docker.io/$IMAGE:latest-modern"
-          
-          echo "  $IMAGE:$DATE"
-          skopeo copy --all "docker://ghcr.io/$IMAGE:$DATE" "docker://docker.io/$IMAGE:$DATE"
-          
-          echo "  $IMAGE:$DATE-modern"
-          skopeo copy --all "docker://ghcr.io/$IMAGE:$DATE-modern" "docker://docker.io/$IMAGE:$DATE-modern"
+          for tag in "latest" "latest-modern" "$DATE" "$DATE-modern"; do
+            echo "  $IMAGE:$tag"
+            skopeo copy --all "docker://ghcr.io/$IMAGE:$tag" "docker://docker.io/$IMAGE:$tag"
+          done
 
       - name: Sync architecture-specific images
         run: |
           IMAGE="${{ env.IMAGE_NAME }}"
           DATE="${{ steps.date.outputs.date }}"
           
-          echo "Syncing architecture-specific images..."
+          echo "Syncing architecture-specific images (with --override-arch)..."
           
-          TAGS=(
-            "latest-amd64"
-            "latest-arm64"
-            "latest-a53"
-            "latest-a72"
-            "latest-modern-amd64"
-            "latest-modern-arm64"
-            "latest-modern-alderlake"
-            "latest-modern-a55"
-          )
+          AMD64_TAGS=("latest-amd64" "latest-modern-amd64" "latest-modern-alderlake")
+          ARM64_TAGS=("latest-arm64" "latest-a53" "latest-a72" "latest-modern-arm64" "latest-modern-a55")
           
-          for tag in "${TAGS[@]}"; do
-            echo "  $IMAGE:$tag"
-            skopeo copy "docker://ghcr.io/$IMAGE:$tag" "docker://docker.io/$IMAGE:$tag"
+          for tag in "${AMD64_TAGS[@]}"; do
+            echo "  $IMAGE:$tag (amd64)"
+            skopeo copy --override-os linux --override-arch amd64 \
+              "docker://ghcr.io/$IMAGE:$tag" "docker://docker.io/$IMAGE:$tag"
             
-            echo "  $IMAGE:$DATE-$tag"
-            skopeo copy "docker://ghcr.io/$IMAGE:$DATE-$tag" "docker://docker.io/$IMAGE:$DATE-$tag"
+            echo "  $IMAGE:$DATE-$tag (amd64)"
+            skopeo copy --override-os linux --override-arch amd64 \
+              "docker://ghcr.io/$IMAGE:$DATE-$tag" "docker://docker.io/$IMAGE:$DATE-$tag"
+          done
+          
+          for tag in "${ARM64_TAGS[@]}"; do
+            echo "  $IMAGE:$tag (arm64)"
+            skopeo copy --override-os linux --override-arch arm64 \
+              "docker://ghcr.io/$IMAGE:$tag" "docker://docker.io/$IMAGE:$tag"
+            
+            echo "  $IMAGE:$DATE-$tag (arm64)"
+            skopeo copy --override-os linux --override-arch arm64 \
+              "docker://ghcr.io/$IMAGE:$DATE-$tag" "docker://docker.io/$IMAGE:$DATE-$tag"
           done
           
           echo "All images synced successfully to Docker Hub"
