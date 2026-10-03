@@ -29,6 +29,7 @@ RUN \
   apk upgrade --no-cache && \
   build_pkgs="build-base linux-headers fortify-headers ccache wget perl git mold cmake libmaxminddb-dev" && \
   apk --no-cache add --virtual .build-deps ${build_pkgs} && \
+  rm -rf /var/cache/apk/* && \
   \
   cd /tmp && \
   \
@@ -210,6 +211,7 @@ RUN \
   apk upgrade --no-cache && \
   runtime_pkgs="ca-certificates tzdata libgcc libstdc++ libatomic libmaxminddb" && \
   apk --no-cache add ${runtime_pkgs} && \
+  rm -rf /var/cache/apk/* && \
   update-ca-certificates && \
   addgroup -S nginx && \
   adduser -D -S -h /var/cache/nginx -s /sbin/nologin -G nginx nginx && \
