@@ -8,7 +8,7 @@ ARG PCRE_VERSION=10.49
 ARG MIMALLOC_VERSION=3.6.1
 ARG ZLIB_NG_VERSION=2.3.3
 ARG BROTLI_URL=https://github.com/wxx9248/ngx_brotli.git
-ARG GEOIP2_URL=https://github.com/kraloveckey/nginx-geoip2.git
+ARG GEOIP2_URL=https://github.com/intechcore/ngx_http_geoip2_module.git
 ARG GEOIP2_BASE_URL=https://github.com/mojolabs-id/GeoLite2-Database
 ARG HEADERS_MORE_URL=https://github.com/openresty/headers-more-nginx-module.git
 
