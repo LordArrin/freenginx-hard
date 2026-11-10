@@ -198,7 +198,7 @@ FROM alpine:${ALPINE_VERSION} AS runtime
 
 LABEL org.opencontainers.image.title="Freenginx Proxy" \
       org.opencontainers.image.description="Freenginx proxy with proper hardening" \
-      org.opencontainers.image.version="1.6.3" \
+      org.opencontainers.image.version="1.6.4" \
       org.opencontainers.image.source="https://github.com/LordArrin/freenginx-hard"
 
 ENV LD_PRELOAD=/usr/lib/libmimalloc-secure.so \
@@ -233,7 +233,8 @@ RUN ln -sf /usr/local/ssl/bin/openssl /usr/sbin/openssl && \
 COPY files/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-HEALTHCHECK --interval=30s --timeout=3s CMD kill -0 $(cat /tmp/nginx.pid) || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD kill -0 $(cat /tmp/nginx.pid) 2>/dev/null || exit 1
 
 EXPOSE 80/tcp 443/tcp 443/udp
 
