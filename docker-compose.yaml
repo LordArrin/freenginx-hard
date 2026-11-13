@@ -1,0 +1,32 @@
+services:
+  nginx:
+    image: lordarrin/freenginx-hard:latest-modern
+    container_name: nginx
+    restart: unless-stopped
+    network_mode: "host"
+    user: "0:0"
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - CHOWN
+      - SETUID
+      - SETGID
+      - FOWNER
+      - DAC_OVERRIDE
+      - KILL
+    security_opt: 
+      - no-new-privileges:true
+    read_only: true
+    volumes:
+      - /home/user/nginx:/tmp/nginx
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+      - /tmp/cache/nginx:size=1g
+      - /tmp/cache/nginx-geoip:size=20m 
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1'
